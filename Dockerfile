@@ -1,0 +1,7 @@
+FROM mysql:8.0
+
+ENV MYSQL_ROOT_PASSWORD=1234
+ENV MYSQL_DATABASE=detector_db
+
+# Exponer el puerto 3306
+EXPOSE 3306
