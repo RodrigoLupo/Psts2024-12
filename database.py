@@ -21,18 +21,19 @@ class DatabaseHandler:
             zone VARCHAR(10),
             entry_time DATETIME,
             interval_time FLOAT,
-            count INT
+            count INT,
+            vehicle_type VARCHAR(10)
         );
         """
         self.cursor.execute(create_table_query)
         self.connection.commit()
 
-    def save_detection(self, zone, entry_time, interval_time, count):
+    def save_detection(self, zone, entry_time, interval_time, count, vehicle_type):
         insert_query = """
-        INSERT INTO detections (zone, entry_time, interval_time, count)
-        VALUES (%s, %s, %s, %s);
+        INSERT INTO detections (zone, entry_time, interval_time, count, vehicle_type)
+        VALUES (%s, %s, %s, %s, %s);
         """
-        self.cursor.execute(insert_query, (zone, entry_time, interval_time, count))
+        self.cursor.execute(insert_query, (zone, entry_time, interval_time, count, vehicle_type))
         self.connection.commit()
 
     def close_connection(self):

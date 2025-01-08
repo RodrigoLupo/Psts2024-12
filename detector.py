@@ -54,14 +54,13 @@ class Detector:
             'people': self.trackers['person'].update(self.get_bboxes(preds, "person"))
         }
 
-        # Asegurar consistencia en las formas de datos
-        cars = frame_data['cars'] if frame_data['cars'].size > 0 else np.empty((0, 5))
-        buses = frame_data['buses'] if frame_data['buses'].size > 0 else np.empty((0, 5))
+        combined_vehicles = []
+        for vehicle_type, data in [('car', frame_data['cars']), ('bus', frame_data['buses'])]:
+            if data.size > 0:
+                for obj in data:
+                    combined_vehicles.append((vehicle_type, obj))
 
-        # Combinar datos de carros y buses
-        combined_vehicles = np.concatenate((cars, buses), axis=0) if cars.size > 0 or buses.size > 0 else np.empty((0, 5))
-
-        for obj in combined_vehicles:
+        for vehicle_type, obj in combined_vehicles:
             xc, yc = draw_detections(frame, obj, (255, 0, 0), (0, 255, 0))
             current_time = self.interval_calculator.get_current_datetime()
 
@@ -73,8 +72,8 @@ class Detector:
                 self.logger.add_log('green', self.car_ids['green'], current_time.strftime("%Y-%m-%d %H:%M:%S"),
                                     interval if interval else 0.0, self.counters['green'])
 
-                # Guardar en la base de datos
-                self.db_handler.save_detection("green", current_time, interval if interval else 0.0, self.counters['green'])
+                # Guardar en la base de datos con vehicle_type
+                self.db_handler.save_detection("green", current_time, interval if interval else 0.0, self.counters['green'], vehicle_type)
 
             elif is_inside_zone((xc, yc), zones['car_red']) and obj[4] not in self.countend_ids['red']:
                 self.countend_ids['red'].add(obj[4])
@@ -84,8 +83,8 @@ class Detector:
                 self.logger.add_log('red', self.car_ids['red'], current_time.strftime("%Y-%m-%d %H:%M:%S"),
                                     interval if interval else 0.0, self.counters['red'])
 
-                # Guardar en la base de datos
-                self.db_handler.save_detection("red", current_time, interval if interval else 0.0, self.counters['red'])
+                # Guardar en la base de datos con vehicle_type
+                self.db_handler.save_detection("red", current_time, interval if interval else 0.0, self.counters['red'], vehicle_type)
 
             elif is_inside_zone((xc, yc), zones['exit']) and obj[4] not in self.countend_ids['exit']:
                 self.countend_ids['exit'].add(obj[4])
@@ -95,19 +94,8 @@ class Detector:
                 self.logger.add_log('exit', self.car_ids['exit'], current_time.strftime("%Y-%m-%d %H:%M:%S"),
                                     interval if interval else 0.0, self.counters['exit'])
 
-                # Guardar en la base de datos
-                self.db_handler.save_detection("exit", current_time, interval if interval else 0.0, self.counters['exit'])
-
-        for obj in frame_data['people']:
-            xc, yc = draw_detections(frame, obj, (0, 255, 255), (255, 255, 255), is_person=True)
-            if is_inside_zone((xc, yc), zones['person']) and obj[4] not in self.countend_ids['person']:
-                self.countend_ids['person'].add(obj[4])
-                self.counters['person'] += 1
-
-                person_id = self.person_counter
-                self.person_counter += 1
-
-                print(f"Persona detectada en zona peatonal. ID: {person_id}, Posición: ({xc}, {yc})")
+                # Guardar en la base de datos con vehicle_type
+                self.db_handler.save_detection("exit", current_time, interval if interval else 0.0, self.counters['exit'], vehicle_type)
 
         self.logger.display_logs(frame)
         return frame
