@@ -2,7 +2,8 @@ from datetime import datetime
 
 class DateTimeIntervalCalculator:
     def __init__(self):
-        self.last_datetime = None
+        # Diccionario para almacenar el último tiempo de entrada por zona
+        self.last_entry_time = {}
 
     def get_current_datetime(self):
         """
@@ -10,48 +11,20 @@ class DateTimeIntervalCalculator:
         """
         return datetime.now()
 
-    def calculate_interval(self, current_datetime):
+    def calculate_interval(self, current_time, zone):
         """
-        Calcula el intervalo de tiempo en segundos (incluyendo milisegundos) 
-        entre el último datetime registrado y el datetime actual.
-
-        Args:
-            current_datetime (datetime): El datetime actual.
-
-        Returns:
-            float: Intervalo en segundos (incluyendo milisegundos) o None si no hay referencia previa.
+        Calcula el intervalo de tiempo en segundos entre la entrada del último vehículo y el actual en una zona específica.
         """
-        if self.last_datetime is None:
-            self.last_datetime = current_datetime
-            return None  # No hay intervalo si no hay un datetime previo
+        # Obtener el último tiempo de entrada para la zona
+        last_time = self.last_entry_time.get(zone, None)
 
-        interval = (current_datetime - self.last_datetime).total_seconds()
-        self.last_datetime = current_datetime
+        # Actualizar el tiempo de entrada actual en el diccionario
+        self.last_entry_time[zone] = current_time
+
+        if not last_time:
+            # Si no hay un registro previo, devuelve 0 como intervalo
+            return 0.0
+
+        # Calcular el intervalo de tiempo en segundos
+        interval = (current_time - last_time).total_seconds()
         return interval
-
-# Ejemplo de uso
-if __name__ == "__main__":
-    interval_calculator = DateTimeIntervalCalculator()
-
-    # Simular detecciones de carros en un carril
-    print("Carro detectado en carril verde.")
-    current_time = interval_calculator.get_current_datetime()
-    print(f"Datetime actual: {current_time}")
-
-    interval = interval_calculator.calculate_interval(current_time)
-    if interval is not None:
-        print(f"Intervalo desde el último carro: {interval:.3f} segundos")
-    else:
-        print("Primer carro detectado, no hay intervalo previo.")
-
-    # Simular otro carro después de un tiempo
-    import time
-    time.sleep(2.5)  # Esperar 2.5 segundos
-
-    print("Carro detectado en carril verde.")
-    current_time = interval_calculator.get_current_datetime()
-    print(f"Datetime actual: {current_time}")
-
-    interval = interval_calculator.calculate_interval(current_time)
-    if interval is not None:
-        print(f"Intervalo desde el último carro: {interval:.3f} segundos")

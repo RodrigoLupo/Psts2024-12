@@ -20,20 +20,30 @@ class DatabaseHandler:
             id INT AUTO_INCREMENT PRIMARY KEY,
             zone VARCHAR(10),
             entry_time DATETIME,
+            exit_time DATETIME,
             interval_time FLOAT,
-            count INT,
-            vehicle_type VARCHAR(10)
+            count INT
         );
         """
         self.cursor.execute(create_table_query)
         self.connection.commit()
 
-    def save_detection(self, zone, entry_time, interval_time, count, vehicle_type):
+    def save_detection(self, zone, entry_time, interval_time, count):
         insert_query = """
-        INSERT INTO detections (zone, entry_time, interval_time, count, vehicle_type)
-        VALUES (%s, %s, %s, %s, %s);
+        INSERT INTO detections (zone, entry_time, interval_time, count)
+        VALUES (%s, %s, %s, %s);
         """
-        self.cursor.execute(insert_query, (zone, entry_time, interval_time, count, vehicle_type))
+        self.cursor.execute(insert_query, (zone, entry_time, interval_time, count))
+        self.connection.commit()
+        return self.cursor.lastrowid  # Retorna el ID del registro insertado
+
+    def update_exit_time(self, detection_id, exit_time):
+        update_query = """
+        UPDATE detections
+        SET exit_time = %s
+        WHERE id = %s;
+        """
+        self.cursor.execute(update_query, (exit_time, detection_id))
         self.connection.commit()
 
     def close_connection(self):

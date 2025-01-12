@@ -1,7 +1,6 @@
 import cv2
 import matplotlib.path as mplPath
 
-
 def resize_frame(frame, width=1024):
     h, w = frame.shape[:2]
     return cv2.resize(frame, (width, int(h * (width / w))))

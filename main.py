@@ -14,7 +14,7 @@ if __name__ == "__main__":
             break
 
         frame = detector.process_frame(frame, ZONES)
-        draw_zones(frame, ZONES, [(0, 0, 255), (0, 255, 0), (0, 0, 255), (255, 255, 255)])
+        draw_zones(frame, ZONES, [(0, 0, 255), (0, 255, 0), (0, 0, 255)])
 
         cv2.imshow("Detector", frame)
         if cv2.waitKey(10) & 0xFF == ord('q'):

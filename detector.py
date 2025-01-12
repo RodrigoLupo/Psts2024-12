@@ -1,101 +1,115 @@
 import warnings
 import torch
-import numpy as np
 from tracker import Sort
-from helpers import resize_frame, draw_zones, draw_detections, is_inside_zone
+from helpers import draw_detections, is_inside_zone
 from calculador_datetime import DateTimeIntervalCalculator
 from ventana import Logger
 from database import DatabaseHandler
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-
 class Detector:
     def __init__(self, model_name="yolov5n", confidence_threshold=0.30):
+        """
+        Inicializa el detector de vehículos con YOLOv5 y otros componentes necesarios.
+        """
+        # Cargar modelo de detección YOLOv5
         self.model = torch.hub.load("ultralytics/yolov5", model=model_name, pretrained=True)
         self.confidence_threshold = confidence_threshold
+
+        # Inicializar trackers para autos y buses
         self.trackers = {
             'car': Sort(),
             'bus': Sort(),
-            'person': Sort()
         }
-        self.countend_ids = {
-            'person': set(),
-            'green': set(),
-            'red': set(),
-            'exit': set()
+
+        # Estados de vehículos por zonas
+        self.vehicle_states = {
+            'green': {},  # Estructura: {id: {'state': 'inside'/'exited'/'completed', 'enter_time': datetime}}
+            'red': {},
         }
-        self.car_ids = {
-            'green': 0,
-            'red': 0,
-            'exit': 0
-        }
+
+        # Contadores de detecciones por zonas
         self.counters = {
-            'person': 0,
-            'green': 0,
-            'red': 0,
-            'exit': 0
+            'green': 0,  # Total acumulado en la zona verde
+            'red': 0,    # Total acumulado en la zona roja
         }
+
+        # Inicializar calculador de intervalos de tiempo
         self.interval_calculator = DateTimeIntervalCalculator()
+
+        # Inicializar logger para manejar registros
         self.logger = Logger()
+
+        # Inicializar manejador de base de datos
         self.db_handler = DatabaseHandler()
 
-        self.person_counter = 1
-
     def get_bboxes(self, preds, name_filter):
+        """
+        Obtiene los bounding boxes de las predicciones filtrando por nombre y confianza.
+        """
         df = preds.pandas().xyxy[0]
         return df[(df["confidence"] >= self.confidence_threshold) & (df["name"] == name_filter)][['xmin', 'ymin', 'xmax', 'ymax']].values
 
+    def update_vehicle_state(self, vehicle_id, zone, is_inside, current_time):
+        """
+        Actualiza el estado de un vehículo en una zona específica.
+        """
+        vehicle = self.vehicle_states[zone].get(vehicle_id, None)
+
+        if is_inside:  # Vehículo entrando o dentro de la zona
+            if not vehicle or vehicle['state'] == 'completed':  # Nueva detección
+                self.counters[zone] += 1
+                
+                # Calcular intervalo con el vehículo previo
+                interval = self.interval_calculator.calculate_interval(current_time, zone)
+                
+                # Registrar entrada del vehículo
+                self.vehicle_states[zone][vehicle_id] = {
+                    'state': 'inside',
+                    'enter_time': current_time,
+                }
+                
+                # Guardar en la base de datos y el logger
+                detection_id = self.db_handler.save_detection(zone, current_time, interval, self.counters[zone])
+                self.logger.add_entry_log(zone, detection_id, current_time.strftime("%Y-%m-%d %H:%M:%S"), interval, self.counters[zone])
+        else:  # Vehículo saliendo de la zona
+            if vehicle and vehicle['state'] == 'inside':  # Cambio a estado "exited"
+                vehicle['state'] = 'exited'
+                vehicle['exit_time'] = current_time
+                
+                # Actualizar salida en la base de datos y logger
+                detection_id = self.counters[zone]  # Usamos el mismo contador para entrada y salida
+                self.db_handler.update_exit_time(detection_id, current_time.strftime("%Y-%m-%d %H:%M:%S"))
+                self.logger.add_exit_log(zone, detection_id, current_time.strftime("%Y-%m-%d %H:%M:%S"))
+                
+                # Marcar como completado
+                vehicle['state'] = 'completed'
+
     def process_frame(self, frame, zones):
+        """
+        Procesa cada frame, detectando vehículos, actualizando sus estados y registrando entradas/salidas.
+        """
         preds = self.model(frame)
         frame_data = {
             'cars': self.trackers['car'].update(self.get_bboxes(preds, "car")),
             'buses': self.trackers['bus'].update(self.get_bboxes(preds, "bus")),
-            'people': self.trackers['person'].update(self.get_bboxes(preds, "person"))
         }
+        current_time = self.interval_calculator.get_current_datetime()
 
-        combined_vehicles = []
         for vehicle_type, data in [('car', frame_data['cars']), ('bus', frame_data['buses'])]:
-            if data.size > 0:
-                for obj in data:
-                    combined_vehicles.append((vehicle_type, obj))
+            for obj in data:
+                xc, yc = draw_detections(frame, obj, (255, 0, 0), (0, 255, 0))
 
-        for vehicle_type, obj in combined_vehicles:
-            xc, yc = draw_detections(frame, obj, (255, 0, 0), (0, 255, 0))
-            current_time = self.interval_calculator.get_current_datetime()
+                # Manejo de zona verde
+                is_inside_green = is_inside_zone((xc, yc), zones['car_green'])
+                self.update_vehicle_state(obj[4], 'green', is_inside_green, current_time)
 
-            if is_inside_zone((xc, yc), zones['car_green']) and obj[4] not in self.countend_ids['green']:
-                self.countend_ids['green'].add(obj[4])
-                self.counters['green'] += 1
-                self.car_ids['green'] += 1
-                interval = self.interval_calculator.calculate_interval(current_time)
-                self.logger.add_log('green', self.car_ids['green'], current_time.strftime("%Y-%m-%d %H:%M:%S"),
-                                    interval if interval else 0.0, self.counters['green'])
+                # Manejo de zona roja
+                is_inside_red = is_inside_zone((xc, yc), zones['car_red'])
+                self.update_vehicle_state(obj[4], 'red', is_inside_red, current_time)
 
-                # Guardar en la base de datos con vehicle_type
-                self.db_handler.save_detection("green", current_time, interval if interval else 0.0, self.counters['green'], vehicle_type)
-
-            elif is_inside_zone((xc, yc), zones['car_red']) and obj[4] not in self.countend_ids['red']:
-                self.countend_ids['red'].add(obj[4])
-                self.counters['red'] += 1
-                self.car_ids['red'] += 1
-                interval = self.interval_calculator.calculate_interval(current_time)
-                self.logger.add_log('red', self.car_ids['red'], current_time.strftime("%Y-%m-%d %H:%M:%S"),
-                                    interval if interval else 0.0, self.counters['red'])
-
-                # Guardar en la base de datos con vehicle_type
-                self.db_handler.save_detection("red", current_time, interval if interval else 0.0, self.counters['red'], vehicle_type)
-
-            elif is_inside_zone((xc, yc), zones['exit']) and obj[4] not in self.countend_ids['exit']:
-                self.countend_ids['exit'].add(obj[4])
-                self.counters['exit'] += 1
-                self.car_ids['exit'] += 1
-                interval = self.interval_calculator.calculate_interval(current_time)
-                self.logger.add_log('exit', self.car_ids['exit'], current_time.strftime("%Y-%m-%d %H:%M:%S"),
-                                    interval if interval else 0.0, self.counters['exit'])
-
-                # Guardar en la base de datos con vehicle_type
-                self.db_handler.save_detection("exit", current_time, interval if interval else 0.0, self.counters['exit'], vehicle_type)
-
+        # Mostrar logs en la ventana
         self.logger.display_logs(frame)
+        self.logger.display_exit_logs(frame)
         return frame
