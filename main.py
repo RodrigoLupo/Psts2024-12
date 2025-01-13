@@ -6,7 +6,7 @@ from detector import Detector
 
 if __name__ == "__main__":
     detector = Detector()
-    cap = cv2.VideoCapture("data/beta1.mp4")
+    cap = cv2.VideoCapture("data/video.mp4")
 
     while cap.isOpened():
         status, frame = cap.read()

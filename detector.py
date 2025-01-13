@@ -9,7 +9,7 @@ from database import DatabaseHandler
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 class Detector:
-    def __init__(self, model_name="yolov5n", confidence_threshold=0.30):
+    def __init__(self, model_name="yolov5n", confidence_threshold=0.15):
         """
         Inicializa el detector de vehículos con YOLOv5 y otros componentes necesarios.
         """
@@ -17,11 +17,8 @@ class Detector:
         self.model = torch.hub.load("ultralytics/yolov5", model=model_name, pretrained=True)
         self.confidence_threshold = confidence_threshold
 
-        # Inicializar trackers para autos y buses
-        self.trackers = {
-            'car': Sort(),
-            'bus': Sort(),
-        }
+        # Inicializar tracker para autos
+        self.tracker = Sort()
 
         # Estados de vehículos por zonas
         self.vehicle_states = {
@@ -91,23 +88,19 @@ class Detector:
         Procesa cada frame, detectando vehículos, actualizando sus estados y registrando entradas/salidas.
         """
         preds = self.model(frame)
-        frame_data = {
-            'cars': self.trackers['car'].update(self.get_bboxes(preds, "car")),
-            'buses': self.trackers['bus'].update(self.get_bboxes(preds, "bus")),
-        }
+        frame_data = self.tracker.update(self.get_bboxes(preds, "car"))
         current_time = self.interval_calculator.get_current_datetime()
 
-        for vehicle_type, data in [('car', frame_data['cars']), ('bus', frame_data['buses'])]:
-            for obj in data:
-                xc, yc = draw_detections(frame, obj, (255, 0, 0), (0, 255, 0))
+        for obj in frame_data:
+            xc, yc = draw_detections(frame, obj, (255, 0, 0), (0, 255, 0))
 
-                # Manejo de zona verde
-                is_inside_green = is_inside_zone((xc, yc), zones['car_green'])
-                self.update_vehicle_state(obj[4], 'green', is_inside_green, current_time)
+            # Manejo de zona verde
+            is_inside_green = is_inside_zone((xc, yc), zones['car_green'])
+            self.update_vehicle_state(obj[4], 'green', is_inside_green, current_time)
 
-                # Manejo de zona roja
-                is_inside_red = is_inside_zone((xc, yc), zones['car_red'])
-                self.update_vehicle_state(obj[4], 'red', is_inside_red, current_time)
+            # Manejo de zona roja
+            is_inside_red = is_inside_zone((xc, yc), zones['car_red'])
+            self.update_vehicle_state(obj[4], 'red', is_inside_red, current_time)
 
         # Mostrar logs en la ventana
         self.logger.display_logs(frame)
