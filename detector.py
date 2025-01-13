@@ -22,16 +22,16 @@ class Detector:
 
         # Estados de vehículos por zonas
         self.vehicle_states = {
-            'green': {},  # Estructura: {id: {'state': 'inside'/'exited'/'completed', 'enter_time': datetime}}
+            'green': {},  # Estructura: {id: {'state': 'inside'/'exited'/'completed', 'enter_time': datetime, 'detection_id': int}}
             'red': {},
         }
 
-        # Contadores de detecciones por zonas
-        self.counters = {
-            'green': 0,  # Total acumulado en la zona verde
-            'red': 0,    # Total acumulado en la zona roja
+        # Contador global de detecciones
+        self.global_counter = 0  # Contador único para todos los vehículos
+        self.lane_counters = {
+            'green': 0,
+            'red': 0,
         }
-
         # Inicializar calculador de intervalos de tiempo
         self.interval_calculator = DateTimeIntervalCalculator()
 
@@ -56,30 +56,36 @@ class Detector:
 
         if is_inside:  # Vehículo entrando o dentro de la zona
             if not vehicle or vehicle['state'] == 'completed':  # Nueva detección
-                self.counters[zone] += 1
-                
+                # Incrementar el contador global para asignar un nuevo ID único
+                self.global_counter += 1
+                detection_id = self.global_counter
+
                 # Calcular intervalo con el vehículo previo
                 interval = self.interval_calculator.calculate_interval(current_time, zone)
-                
+                self.lane_counters[zone] += 1
+
                 # Registrar entrada del vehículo
                 self.vehicle_states[zone][vehicle_id] = {
                     'state': 'inside',
                     'enter_time': current_time,
+                    'detection_id': detection_id,
                 }
-                
+
                 # Guardar en la base de datos y el logger
-                detection_id = self.db_handler.save_detection(zone, current_time, interval, self.counters[zone])
-                self.logger.add_entry_log(zone, detection_id, current_time.strftime("%Y-%m-%d %H:%M:%S"), interval, self.counters[zone])
+                self.db_handler.save_detection(zone, current_time, interval, self.lane_counters[zone])
+                self.logger.add_entry_log(zone, detection_id, current_time.strftime("%Y-%m-%d %H:%M:%S"), interval, self.lane_counters[zone])
         else:  # Vehículo saliendo de la zona
             if vehicle and vehicle['state'] == 'inside':  # Cambio a estado "exited"
                 vehicle['state'] = 'exited'
                 vehicle['exit_time'] = current_time
-                
+
+                # Usar el detection_id registrado al entrar
+                detection_id = vehicle['detection_id']
+
                 # Actualizar salida en la base de datos y logger
-                detection_id = self.counters[zone]  # Usamos el mismo contador para entrada y salida
                 self.db_handler.update_exit_time(detection_id, current_time.strftime("%Y-%m-%d %H:%M:%S"))
                 self.logger.add_exit_log(zone, detection_id, current_time.strftime("%Y-%m-%d %H:%M:%S"))
-                
+
                 # Marcar como completado
                 vehicle['state'] = 'completed'
 
