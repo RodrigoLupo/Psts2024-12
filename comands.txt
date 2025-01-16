@@ -1,0 +1,15 @@
+#Instalar las librerias necesarias
+pip install -r requirements.txt
+#Comando dockerfile
+docker build -t nombre_imagen .
+#Comando docker con el contenedor
+docker run -d -p 3306:3306 --name nombre_contenedor nombre_imagen
+'''
+NOTA: 
+ASEGURATE QUE BASE DE DATOS HAIGA UN DATABASE LLAMADO detector_db
+'''
+
+#Comando run 
+python main.py
+#Comando configuracion
+python coordenadas.py
